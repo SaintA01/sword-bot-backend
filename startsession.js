@@ -1,5 +1,5 @@
-// startsession.js - COMPLETELY FIXED VERSION
-import { makeWASocket, useSingleFileAuthState, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
+// startsession.js - FIXED VERSION
+import { makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
 import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -16,10 +16,12 @@ export async function startNewSession(ownerNumber = '', onQR) {
     console.log('📱 Using Baileys version:', version);
 
     const sessionId = uuidv4();
-    const authFile = path.join(SESS_DIR, `auth_${sessionId}.json`);
-    const { state, saveCreds } = useSingleFileAuthState(authFile);
+    const authFolder = path.join(SESS_DIR, `auth_${sessionId}`);
+    
+    // Use MultiFileAuthState instead of SingleFile
+    const { state, saveCreds } = await useMultiFileAuthState(authFolder);
 
-    console.log('📁 Session file:', authFile);
+    console.log('📁 Session folder:', authFolder);
 
     // Create socket with proper configuration
     const sock = makeWASocket({
