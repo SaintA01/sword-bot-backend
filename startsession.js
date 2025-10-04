@@ -11,27 +11,18 @@ export async function startNewSession(ownerNumber = '', onQR) {
   try {
     console.log('🔐 Starting WhatsApp session...');
     
-    // Get latest version for better compatibility
     const { version } = await fetchLatestBaileysVersion();
-    console.log('📱 Using Baileys version:', version);
-
     const sessionId = uuidv4();
     const authFolder = path.join(SESS_DIR, `auth_${sessionId}`);
     
-    // Use MultiFileAuthState instead of SingleFile
     const { state, saveCreds } = await useMultiFileAuthState(authFolder);
 
-    console.log('📁 Session folder:', authFolder);
-
-    // Create socket with proper configuration
     const sock = makeWASocket({
       version,
       auth: state,
-      printQRInTerminal: true, // This will show QR in console
-      logger: {
-        level: 'silent'
-      },
-      browser: ['Sword Bot', 'Chrome', '1.0.0'] // Add browser info
+      printQRInTerminal: true,
+      logger: { level: 'silent' },
+      mobile: true // Enable phone linking
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -51,13 +42,11 @@ export async function startNewSession(ownerNumber = '', onQR) {
         
         // Handle QR Code
         if (qr && !qrShown) {
-          console.log('🎯 QR Code Received (Raw):', qr.substring(0, 50) + '...');
+          console.log('🎯 QR Code Received');
           qrShown = true;
           
           if (typeof onQR === 'function') {
             try {
-              // Send the RAW QR code string to frontend
-              // The frontend will handle converting it to image
               onQR(qr);
               console.log('✅ QR code sent to frontend');
             } catch (e) {
@@ -78,7 +67,7 @@ export async function startNewSession(ownerNumber = '', onQR) {
               console.log('📤 Sending confirmation to:', jid);
               
               await sock.sendMessage(jid, { 
-                text: `✅ *SWORD BOT - SESSION CREATED*\n\nYour Session ID: \`${sessionId}\`\n\nUse this ID in your bot configuration.` 
+                text: `✅ SWORD BOT - SESSION CREATED\n\nYour Session ID: ${sessionId}\n\nUse this ID in your bot configuration.` 
               });
               
               console.log('✅ Confirmation sent to owner');
@@ -96,18 +85,7 @@ export async function startNewSession(ownerNumber = '', onQR) {
           console.log('🔌 Connection closed, code:', errorCode);
           
           clearTimeout(timeout);
-          
-          if (errorCode === 401) {
-            reject(new Error('Logged out from WhatsApp. Please scan QR again.'));
-          } else if (errorCode === 403) {
-            reject(new Error('Connection blocked. Try again later.'));
-          } else if (errorCode === 419) {
-            reject(new Error('Session expired. Please try again.'));
-          } else if (errorCode) {
-            reject(new Error(`Connection failed: ${errorCode}`));
-          } else {
-            reject(new Error('Connection closed unexpectedly'));
-          }
+          reject(new Error('Connection closed: ' + (errorCode || 'Unknown error')));
         }
       });
 
