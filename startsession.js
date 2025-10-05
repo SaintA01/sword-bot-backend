@@ -1,5 +1,5 @@
-// startsession.js - IMPROVED WHATSAPP CONNECTION
-import { makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
+// startsession.js - WORKING VERSION
+import { makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, DisconnectReason } from '@whiskeysockets/baileys';
 import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -9,37 +9,30 @@ if (!fs.existsSync(SESS_DIR)) fs.mkdirSync(SESS_DIR, { recursive: true });
 
 export async function startNewSession(ownerNumber = '', onQR) {
   try {
-    console.log('🔐 Starting REAL WhatsApp session...');
+    console.log('🔐 Starting WhatsApp session...');
     
-    // Get latest version for better compatibility
     const { version } = await fetchLatestBaileysVersion();
     console.log('📱 Using Baileys version:', version);
 
     const sessionId = uuidv4();
     const authFolder = path.join(SESS_DIR, `auth_${sessionId}`);
     
-    console.log('📁 Creating auth folder:', authFolder);
+    console.log('📁 Auth folder:', authFolder);
     
-    // Use MultiFileAuthState
     const { state, saveCreds } = await useMultiFileAuthState(authFolder);
 
-    console.log('✅ Auth state initialized');
-
-    // Create socket with proper WhatsApp configuration
+    // Create socket with SIMPLE configuration
     const sock = makeWASocket({
       version,
       auth: state,
-      printQRInTerminal: true, // This shows QR in console
+      printQRInTerminal: true,
       logger: {
-        level: 'silent'
+        level: 'warn' // Only show warnings and errors
       },
-      browser: ['Ubuntu', 'Chrome', '20.0.04'],
-      // WhatsApp connection settings
-      connectTimeoutMs: 60000,
-      keepAliveIntervalMs: 10000,
-      defaultQueryTimeoutMs: 0,
-      // Mobile compatibility
-      mobile: false, // Set to true if you want phone linking
+      browser: ['Chrome', 'Windows', '10.0.0'],
+      // Simple connection settings
+      connectTimeoutMs: 30000,
+      keepAliveIntervalMs: 15000
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -52,76 +45,82 @@ export async function startNewSession(ownerNumber = '', onQR) {
       
       const timeout = setTimeout(() => {
         if (!connected) {
-          console.log('⏰ Session timeout after 2 minutes');
-          reject(new Error('Timeout: No response from WhatsApp in 2 minutes'));
+          console.log('⏰ Session timeout');
+          reject(new Error('Timeout: Could not connect to WhatsApp'));
         }
       }, 120000);
 
-      sock.ev.on('connection.update', async (update) => {
+      sock.ev.on('connection.update', (update) => {
         const { connection, qr, lastDisconnect } = update;
         
-        console.log('📡 Connection update:', connection, qr ? 'QR received' : '');
+        console.log('📡 Connection update:', connection);
         
         // Handle QR Code
         if (qr && !qrShown) {
-          console.log('🎯 REAL QR Code Received - This should work with WhatsApp');
+          console.log('🎯 QR Code received');
           qrShown = true;
           
           if (typeof onQR === 'function') {
             try {
               onQR(qr);
-              console.log('✅ QR code sent to frontend');
+              console.log('✅ QR sent to frontend');
             } catch (e) {
-              console.error('❌ Failed to send QR to frontend:', e);
+              console.error('❌ Failed to send QR:', e);
             }
           }
         }
         
         // Handle successful connection
         if (connection === 'open') {
-          console.log('✅✅✅ WhatsApp CONNECTED SUCCESSFULLY!');
+          console.log('✅✅✅ WhatsApp CONNECTED!');
           connected = true;
           clearTimeout(timeout);
-          
-          // Send confirmation message if phone number provided
-          if (ownerNumber && ownerNumber.trim() !== '') {
-            try {
-              const jid = ownerNumber.includes('@') ? ownerNumber : `${ownerNumber}@s.whatsapp.net`;
-              console.log('📤 Sending confirmation to:', jid);
-              
-              await sock.sendMessage(jid, { 
-                text: `✅ SWORD BOT - SESSION CREATED\n\nYour Session ID: ${sessionId}\n\nUse this ID in your bot configuration.` 
-              });
-              
-              console.log('✅ Confirmation sent to owner');
-            } catch (e) {
-              console.warn('⚠️ Could not send WhatsApp message:', e.message);
-            }
-          }
-          
           resolve(sessionId);
         }
         
-        // Handle connection closure
+        // Handle connection closure with better error messages
         if (connection === 'close') {
-          const errorCode = lastDisconnect?.error?.output?.statusCode;
-          console.log('🔌 Connection closed, code:', errorCode);
+          const shouldReconnect = (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut);
+          
+          console.log('🔌 Connection closed:', {
+            statusCode: lastDisconnect?.error?.output?.statusCode,
+            shouldReconnect
+          });
           
           clearTimeout(timeout);
           
-          if (!connected) {
-            reject(new Error(`Connection closed: ${errorCode || 'Unknown error'}`));
+          if (lastDisconnect?.error) {
+            const statusCode = lastDisconnect.error.output?.statusCode;
+            switch (statusCode) {
+              case DisconnectReason.connectionLost:
+                reject(new Error('Connection lost to WhatsApp'));
+                break;
+              case DisconnectReason.connectionClosed:
+                reject(new Error('Connection closed by WhatsApp'));
+                break;
+              case DisconnectReason.restartRequired:
+                reject(new Error('Restart required'));
+                break;
+              case DisconnectReason.timedOut:
+                reject(new Error('Connection timed out'));
+                break;
+              case DisconnectReason.loggedOut:
+                reject(new Error('Logged out from WhatsApp. Please scan QR again.'));
+                break;
+              default:
+                reject(new Error(`Connection failed: ${lastDisconnect.error.message}`));
+            }
+          } else {
+            reject(new Error('Connection closed unexpectedly'));
           }
         }
       });
 
-      // Handle errors
+      // Handle connection errors
       sock.ev.on('connection.failed', (error) => {
         console.error('💥 Connection failed:', error);
         clearTimeout(timeout);
-        if (!connected) {
-          reject(new Error('Connection failed: ' + error.message));
-        }
+        reject(new Error(`Connection failed: ${error.message}`));
       });
     });
   } catch (error) {
