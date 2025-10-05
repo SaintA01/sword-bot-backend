@@ -1,4 +1,4 @@
-// startsession.js - FIXED VERSION
+// startsession.js - IMPROVED ERROR HANDLING
 import { makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
 import fs from 'fs';
 import path from 'path';
@@ -11,34 +11,53 @@ export async function startNewSession(ownerNumber = '', onQR) {
   try {
     console.log('🔐 Starting WhatsApp session...');
     
+    // Get latest version for better compatibility
     const { version } = await fetchLatestBaileysVersion();
+    console.log('📱 Using Baileys version:', version);
+
     const sessionId = uuidv4();
     const authFolder = path.join(SESS_DIR, `auth_${sessionId}`);
     
+    console.log('📁 Creating auth folder:', authFolder);
+    
+    // Use MultiFileAuthState instead of SingleFile
     const { state, saveCreds } = await useMultiFileAuthState(authFolder);
 
+    console.log('✅ Auth state initialized');
+
+    // Create socket with proper configuration
     const sock = makeWASocket({
       version,
       auth: state,
       printQRInTerminal: true,
-      logger: { level: 'silent' },
-      mobile: true // Enable phone linking
+      logger: {
+        level: 'info' // Changed to info for debugging
+      },
+      browser: ['Sword Bot', 'Chrome', '1.0.0'],
+      // Add connection configs
+      connectTimeoutMs: 60000,
+      keepAliveIntervalMs: 10000
     });
 
     sock.ev.on('creds.update', saveCreds);
 
     return new Promise((resolve, reject) => {
       let qrShown = false;
+      let connected = false;
+      
+      console.log('⏳ Waiting for WhatsApp connection...');
       
       const timeout = setTimeout(() => {
-        console.log('⏰ Session timeout after 2 minutes');
-        reject(new Error('Timeout: No response from WhatsApp in 2 minutes'));
+        if (!connected) {
+          console.log('⏰ Session timeout after 2 minutes');
+          reject(new Error('Timeout: No response from WhatsApp in 2 minutes'));
+        }
       }, 120000);
 
       sock.ev.on('connection.update', async (update) => {
         const { connection, qr, lastDisconnect } = update;
         
-        console.log('📡 Connection update:', connection);
+        console.log('📡 Connection update:', connection, qr ? 'QR received' : '');
         
         // Handle QR Code
         if (qr && !qrShown) {
@@ -58,6 +77,7 @@ export async function startNewSession(ownerNumber = '', onQR) {
         // Handle successful connection
         if (connection === 'open') {
           console.log('✅✅✅ WhatsApp CONNECTED SUCCESSFULLY!');
+          connected = true;
           clearTimeout(timeout);
           
           // Send confirmation message if phone number provided
@@ -85,7 +105,20 @@ export async function startNewSession(ownerNumber = '', onQR) {
           console.log('🔌 Connection closed, code:', errorCode);
           
           clearTimeout(timeout);
-          reject(new Error('Connection closed: ' + (errorCode || 'Unknown error')));
+          
+          if (!connected) {
+            if (errorCode === 401) {
+              reject(new Error('Logged out from WhatsApp. Please scan QR again.'));
+            } else if (errorCode === 403) {
+              reject(new Error('Connection blocked. Try again later.'));
+            } else if (errorCode === 419) {
+              reject(new Error('Session expired. Please try again.'));
+            } else if (errorCode) {
+              reject(new Error(`Connection failed: ${errorCode}`));
+            } else {
+              reject(new Error('Connection closed unexpectedly'));
+            }
+          }
         }
       });
 
@@ -93,7 +126,9 @@ export async function startNewSession(ownerNumber = '', onQR) {
       sock.ev.on('connection.failed', (error) => {
         console.error('💥 Connection failed:', error);
         clearTimeout(timeout);
-        reject(new Error('Connection failed: ' + error.message));
+        if (!connected) {
+          reject(new Error('Connection failed: ' + error.message));
+        }
       });
     });
   } catch (error) {
