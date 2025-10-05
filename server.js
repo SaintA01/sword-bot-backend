@@ -1,4 +1,4 @@
-// server.js - OPTIMIZED FOR RENDER
+// server.js - COMPLETELY FIXED VERSION
 import express from 'express';
 import { startNewSession } from './startsession.js';
 import path from 'path';
@@ -19,81 +19,89 @@ app.use(express.static('public'));
 // Store active sessions
 const activeSessions = new Map();
 
-// ADD THIS AT THE TOP OF server.js
-process.on('uncaughtException', (error) => {
-  console.error('💥 UNCAUGHT EXCEPTION:', error);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('💥 UNHANDLED REJECTION at:', promise, 'reason:', reason);
-});
-
 // Health check route (important for Render)
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'OK', 
     service: 'Sword Bot Backend',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    activeSessions: activeSessions.size
   });
 });
 
-// Session API Routes
+// Session API Routes - COMPLETELY FIXED
 app.post('/api/start-session', async (req, res) => {
   console.log('📱 API Called: /api/start-session');
+  console.log('📦 Request body:', req.body);
   
   try {
-    const { ownerNumber, returnQRCode } = req.body;
+    const { ownerNumber, returnQRCode, phoneNumber } = req.body;
     
     const tempId = Date.now().toString() + Math.random().toString(36).substring(2);
     
-    console.log('🔄 Starting WhatsApp session...');
-    
-    const sessionResult = await new Promise(async (resolve, reject) => {
-      try {
-        const sessionId = await startNewSession(ownerNumber || '', async (qr) => {
-          console.log('🎯 QR code generated');
-          
-          // Store in active sessions
-          activeSessions.set(tempId, {
-            qr,
-            status: 'qr_ready',
-            ownerNumber: ownerNumber || '',
-            timestamp: Date.now()
-          });
-          
-          // If QR was requested, return it
-          if (returnQRCode) {
-            resolve({
-              tempId,
-              qr,
-              status: 'qr_ready',
-              message: 'Scan the QR code with WhatsApp'
-            });
-          }
-        });
+    console.log('🔄 Starting WhatsApp session...', { tempId, ownerNumber, phoneNumber, returnQRCode });
+
+    // FIX: Use proper async/await pattern
+    let qrCallbackFired = false;
+    let sessionResolved = false;
+
+    try {
+      const sessionId = await startNewSession(ownerNumber || '', (qr) => {
+        console.log('🎯 QR code generated');
+        qrCallbackFired = true;
         
-        // Session connected successfully
-        console.log('✅ Session connected:', sessionId);
+        // Store in active sessions
         activeSessions.set(tempId, {
-          sessionId,
-          status: 'connected',
+          qr,
+          status: 'qr_ready',
           ownerNumber: ownerNumber || '',
+          phoneNumber: phoneNumber || '',
           timestamp: Date.now()
         });
         
-        resolve({
+        // If QR was requested, send response immediately
+        if (returnQRCode && !sessionResolved) {
+          console.log('✅ Sending QR response immediately');
+          res.json({
+            tempId,
+            qr,
+            status: 'qr_ready',
+            message: 'Scan the QR code with WhatsApp'
+          });
+          sessionResolved = true;
+        }
+      });
+      
+      // Session connected successfully
+      console.log('✅ Session connected:', sessionId);
+      activeSessions.set(tempId, {
+        sessionId,
+        status: 'connected',
+        ownerNumber: ownerNumber || '',
+        phoneNumber: phoneNumber || '',
+        timestamp: Date.now()
+      });
+      
+      if (!sessionResolved) {
+        console.log('✅ Sending connected response');
+        res.json({
           sessionId,
           status: 'connected',
           message: 'Session created successfully'
         });
-        
-      } catch (error) {
-        console.error('❌ Session error:', error);
-        reject(error);
+        sessionResolved = true;
       }
-    });
-
-    res.json(sessionResult);
+      
+    } catch (sessionError) {
+      console.error('❌ Session error:', sessionError);
+      if (!sessionResolved) {
+        res.status(500).json({
+          error: 'Failed to start session',
+          details: sessionError.message
+        });
+        sessionResolved = true;
+      }
+    }
     
   } catch (error) {
     console.error('💥 API Error:', error);
@@ -107,8 +115,13 @@ app.post('/api/start-session', async (req, res) => {
 app.get('/api/session-status', (req, res) => {
   const { tempId } = req.query;
   
+  console.log('📊 Session status check for:', tempId);
+  
   if (!tempId || !activeSessions.has(tempId)) {
-    return res.status(404).json({ error: 'Session not found' });
+    return res.status(404).json({ 
+      error: 'Session not found',
+      availableSessions: Array.from(activeSessions.keys())
+    });
   }
   
   const session = activeSessions.get(tempId);
@@ -119,6 +132,7 @@ app.get('/api/session-status', (req, res) => {
     return res.status(404).json({ error: 'Session expired' });
   }
   
+  console.log('📊 Returning session status:', session.status);
   res.json(session);
 });
 
@@ -140,4 +154,13 @@ app.get('/', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Sword Bot Backend running on port ${PORT}`);
   console.log(`🌐 Health check: http://0.0.0.0:${PORT}/health`);
+});
+
+// Add error handling
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('💥 Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('💥 Uncaught Exception:', error);
 });
