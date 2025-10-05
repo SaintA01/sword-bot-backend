@@ -1,4 +1,4 @@
-// startsession.js - IMPROVED ERROR HANDLING
+// startsession.js - IMPROVED WHATSAPP CONNECTION
 import { makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
 import fs from 'fs';
 import path from 'path';
@@ -9,7 +9,7 @@ if (!fs.existsSync(SESS_DIR)) fs.mkdirSync(SESS_DIR, { recursive: true });
 
 export async function startNewSession(ownerNumber = '', onQR) {
   try {
-    console.log('🔐 Starting WhatsApp session...');
+    console.log('🔐 Starting REAL WhatsApp session...');
     
     // Get latest version for better compatibility
     const { version } = await fetchLatestBaileysVersion();
@@ -20,23 +20,26 @@ export async function startNewSession(ownerNumber = '', onQR) {
     
     console.log('📁 Creating auth folder:', authFolder);
     
-    // Use MultiFileAuthState instead of SingleFile
+    // Use MultiFileAuthState
     const { state, saveCreds } = await useMultiFileAuthState(authFolder);
 
     console.log('✅ Auth state initialized');
 
-    // Create socket with proper configuration
+    // Create socket with proper WhatsApp configuration
     const sock = makeWASocket({
       version,
       auth: state,
-      printQRInTerminal: true,
+      printQRInTerminal: true, // This shows QR in console
       logger: {
-        level: 'info' // Changed to info for debugging
+        level: 'silent'
       },
-      browser: ['Sword Bot', 'Chrome', '1.0.0'],
-      // Add connection configs
+      browser: ['Ubuntu', 'Chrome', '20.0.04'],
+      // WhatsApp connection settings
       connectTimeoutMs: 60000,
-      keepAliveIntervalMs: 10000
+      keepAliveIntervalMs: 10000,
+      defaultQueryTimeoutMs: 0,
+      // Mobile compatibility
+      mobile: false, // Set to true if you want phone linking
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -61,7 +64,7 @@ export async function startNewSession(ownerNumber = '', onQR) {
         
         // Handle QR Code
         if (qr && !qrShown) {
-          console.log('🎯 QR Code Received');
+          console.log('🎯 REAL QR Code Received - This should work with WhatsApp');
           qrShown = true;
           
           if (typeof onQR === 'function') {
@@ -107,17 +110,7 @@ export async function startNewSession(ownerNumber = '', onQR) {
           clearTimeout(timeout);
           
           if (!connected) {
-            if (errorCode === 401) {
-              reject(new Error('Logged out from WhatsApp. Please scan QR again.'));
-            } else if (errorCode === 403) {
-              reject(new Error('Connection blocked. Try again later.'));
-            } else if (errorCode === 419) {
-              reject(new Error('Session expired. Please try again.'));
-            } else if (errorCode) {
-              reject(new Error(`Connection failed: ${errorCode}`));
-            } else {
-              reject(new Error('Connection closed unexpectedly'));
-            }
+            reject(new Error(`Connection closed: ${errorCode || 'Unknown error'}`));
           }
         }
       });
