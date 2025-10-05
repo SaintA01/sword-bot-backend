@@ -1,4 +1,4 @@
-// server.js - ULTRA SIMPLE WORKING VERSION
+// server.js - BACKEND ONLY (for sword-bot-backend)
 import express from 'express';
 import { startNewSession } from './startsession.js';
 import cors from 'cors';
@@ -9,97 +9,41 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Store sessions
 const activeSessions = new Map();
 
-// Health check
+// API ENDPOINTS ONLY - No HTML serving
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
-    message: 'Backend is running',
-    timestamp: new Date().toISOString()
-  });
+  res.json({ status: 'OK', service: 'Backend API' });
 });
 
-// Start session - SIMPLE VERSION
 app.post('/api/start-session', async (req, res) => {
-  console.log('🚀 START SESSION CALLED');
-  
   try {
     const { returnQRCode } = req.body;
     const tempId = Date.now().toString();
 
-    console.log('🔄 Creating WhatsApp session...');
-
-    // Start the session
-    const sessionId = await startNewSession('', (qrCode) => {
-      console.log('✅ QR CODE GENERATED!');
+    const sessionId = await startNewSession('', (qr) => {
+      activeSessions.set(tempId, { qr, status: 'qr_ready', timestamp: Date.now() });
       
-      // Store session
-      activeSessions.set(tempId, {
-        qr: qrCode,
-        status: 'qr_ready',
-        timestamp: Date.now()
-      });
-
-      // Send QR to frontend
       if (returnQRCode) {
-        console.log('📱 Sending QR to frontend...');
-        res.json({
-          success: true,
-          tempId: tempId,
-          qr: qrCode,
-          status: 'qr_ready',
-          message: 'QR code ready for scanning'
-        });
+        res.json({ tempId, qr, status: 'qr_ready', message: 'Scan QR with WhatsApp' });
       }
     });
 
-    // If we get here, session is connected
-    console.log('✅ SESSION CONNECTED:', sessionId);
-    activeSessions.set(tempId, {
-      sessionId: sessionId,
-      status: 'connected', 
-      timestamp: Date.now()
-    });
-
-    res.json({
-      success: true,
-      sessionId: sessionId,
-      status: 'connected',
-      message: 'WhatsApp connected successfully!'
-    });
+    activeSessions.set(tempId, { sessionId, status: 'connected', timestamp: Date.now() });
+    res.json({ sessionId, status: 'connected', message: 'Session created!' });
 
   } catch (error) {
-    console.error('❌ SESSION ERROR:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to start session: ' + error.message
-    });
+    res.status(500).json({ error: 'Failed: ' + error.message });
   }
 });
 
-// Session status
 app.get('/api/session-status', (req, res) => {
   const { tempId } = req.query;
-  console.log('📊 Status check for:', tempId);
-
-  if (!tempId) {
-    return res.status(400).json({ error: 'tempId required' });
-  }
-
   const session = activeSessions.get(tempId);
-  if (!session) {
-    return res.status(404).json({ error: 'Session not found' });
-  }
-
+  if (!session) return res.status(404).json({ error: 'Not found' });
   res.json(session);
 });
 
-// Start server
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🎯 WhatsApp Session Backend running on port ${PORT}`);
-  console.log(`✅ Health check: /health`);
-  console.log(`✅ Start session: POST /api/start-session`);
-  console.log(`✅ Check status: GET /api/session-status`);
+  console.log(`✅ Backend API running on port ${PORT}`);
 });
