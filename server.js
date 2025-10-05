@@ -19,6 +19,15 @@ app.use(express.static('public'));
 // Store active sessions
 const activeSessions = new Map();
 
+// ADD THIS AT THE TOP OF server.js
+process.on('uncaughtException', (error) => {
+  console.error('💥 UNCAUGHT EXCEPTION:', error);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('💥 UNHANDLED REJECTION at:', promise, 'reason:', reason);
+});
+
 // Health check route (important for Render)
 app.get('/health', (req, res) => {
   res.json({ 
