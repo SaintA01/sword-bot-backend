@@ -8,13 +8,13 @@
         body { font-family: Arial; background: #0f1724; color: white; margin: 0; padding: 20px; }
         .container { max-width: 500px; margin: 0 auto; }
         .card { background: #1e293b; padding: 20px; border-radius: 10px; margin: 20px 0; }
-        button { background: #7c3aed; color: white; border: none; padding: 12px 20px; border-radius: 5px; cursor: pointer; width: 100%; font-size: 16px; }
-        input { width: 100%; padding: 10px; margin: 10px 0; border-radius: 5px; border: 1px solid #374151; background: #374151; color: white; }
-        .qr-container { text-align: center; margin: 20px 0; }
-        #qrCanvas { background: white; padding: 20px; border-radius: 10px; }
-        .status { padding: 10px; border-radius: 5px; margin: 10px 0; }
+        button { background: #7c3aed; color: white; border: none; padding: 15px; border-radius: 8px; cursor: pointer; width: 100%; font-size: 16px; margin: 10px 0; }
+        input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; border: 1px solid #374151; background: #374151; color: white; }
+        .qr-box { background: white; padding: 20px; border-radius: 10px; margin: 20px 0; text-align: center; }
+        .status { padding: 15px; border-radius: 8px; margin: 10px 0; }
         .success { background: #065f46; }
         .error { background: #7f1d1d; }
+        .info { background: #1e40af; }
     </style>
 </head>
 <body>
@@ -22,23 +22,23 @@
         <h1>🔗 Connect WhatsApp</h1>
         
         <div class="card">
-            <h3>Step 1: Get QR Code</h3>
-            <button onclick="startSession()">Generate QR Code</button>
+            <h3>Step 1: Generate QR Code</h3>
+            <button onclick="startSession()">🎯 Generate QR Code</button>
         </div>
 
         <div class="card" id="qrSection" style="display:none">
             <h3>Step 2: Scan QR Code</h3>
-            <div class="qr-container">
+            <div class="qr-box">
                 <canvas id="qrCanvas"></canvas>
             </div>
-            <p>Open WhatsApp → Settings → Linked Devices → Link a Device</p>
+            <p>📱 Open WhatsApp → Settings → Linked Devices → Link a Device</p>
         </div>
 
         <div class="card">
             <h3>Step 3: Session Status</h3>
-            <div id="status" class="status">Ready to start...</div>
+            <div id="status" class="status info">Ready to start...</div>
             <input type="text" id="sessionId" placeholder="Session ID will appear here" readonly>
-            <button onclick="copySessionId()">Copy Session ID</button>
+            <button onclick="copySessionId()">📋 Copy Session ID</button>
         </div>
     </div>
 
@@ -46,22 +46,31 @@
         const BACKEND_URL = 'https://sword-bot-backend.onrender.com';
 
         async function startSession() {
-            setStatus('🔄 Generating QR code...', '');
+            setStatus('🔄 Generating QR code...', 'info');
             
             try {
+                console.log('🚀 Calling backend...');
                 const response = await fetch(BACKEND_URL + '/api/start-session', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ returnQRCode: true })
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ 
+                        returnQRCode: true,
+                        ownerNumber: ''
+                    })
                 });
 
+                console.log('📡 Response status:', response.status);
                 const data = await response.json();
-                
+                console.log('📦 Response data:', data);
+
                 if (data.qr) {
                     // Show QR section
                     document.getElementById('qrSection').style.display = 'block';
                     
-                    // Generate QR code
+                    // Generate QR code image
                     const canvas = document.getElementById('qrCanvas');
                     QRCode.toCanvas(canvas, data.qr, {
                         width: 250,
@@ -69,54 +78,79 @@
                         color: { dark: '#000000', light: '#FFFFFF' }
                     }, function(error) {
                         if (error) {
-                            setStatus('❌ Failed to generate QR', 'error');
+                            setStatus('❌ Failed to generate QR image', 'error');
+                            console.error('QR error:', error);
                         } else {
                             setStatus('✅ QR code ready! Scan with WhatsApp', 'success');
+                            console.log('✅ QR image generated');
                         }
                     });
                     
-                    // Start polling for connection
+                    // Start polling for connection status
                     if (data.tempId) {
+                        console.log('🔄 Starting polling with tempId:', data.tempId);
                         pollStatus(data.tempId);
                     }
                 } else {
-                    setStatus('❌ No QR received', 'error');
+                    setStatus('❌ No QR code received from server', 'error');
+                    console.error('No QR in response:', data);
                 }
             } catch (error) {
-                setStatus('❌ Failed to start session: ' + error, 'error');
+                setStatus('❌ Failed to connect to server: ' + error.message, 'error');
+                console.error('Request error:', error);
             }
         }
 
         async function pollStatus(tempId) {
+            console.log('🔍 Starting to poll status...');
             const interval = setInterval(async () => {
                 try {
                     const response = await fetch(BACKEND_URL + '/api/session-status?tempId=' + tempId);
-                    const data = await response.json();
-                    
-                    if (data.status === 'connected' && data.sessionId) {
-                        document.getElementById('sessionId').value = data.sessionId;
-                        setStatus('✅ Connected! Session ID ready', 'success');
-                        clearInterval(interval);
+                    if (response.ok) {
+                        const data = await response.json();
+                        console.log('📊 Polling data:', data);
+                        
+                        if (data.status === 'connected' && data.sessionId) {
+                            document.getElementById('sessionId').value = data.sessionId;
+                            setStatus('✅ Connected! WhatsApp session is active', 'success');
+                            clearInterval(interval);
+                        }
                     }
                 } catch (error) {
                     console.log('Polling error:', error);
                 }
-            }, 2000);
+            }, 3000);
         }
 
         function setStatus(message, type) {
             const statusEl = document.getElementById('status');
             statusEl.textContent = message;
-            statusEl.className = 'status ' + (type === 'error' ? 'error' : type === 'success' ? 'success' : '');
+            statusEl.className = 'status ' + type;
         }
 
         function copySessionId() {
             const sessionId = document.getElementById('sessionId').value;
             if (sessionId) {
                 navigator.clipboard.writeText(sessionId);
-                alert('Session ID copied!');
+                alert('Session ID copied to clipboard!');
+            } else {
+                alert('No session ID available yet');
             }
         }
+
+        // Test backend connection on load
+        window.addEventListener('load', async () => {
+            try {
+                const response = await fetch(BACKEND_URL + '/health');
+                if (response.ok) {
+                    console.log('✅ Backend is reachable');
+                } else {
+                    console.log('❌ Backend health check failed');
+                }
+            } catch (error) {
+                console.log('❌ Cannot reach backend');
+            }
+        });
     </script>
 </body>
 </html>
