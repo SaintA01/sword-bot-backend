@@ -1,4 +1,4 @@
-// server.js - DEBUG VERSION
+// server.js - REAL WHATSAPP CONNECTION
 import express from 'express';
 import { startNewSession } from './startsession.js';
 import path from 'path';
@@ -28,27 +28,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-// SIMPLE TEST ENDPOINT - Let's test if this works first
-app.post('/api/test-session', async (req, res) => {
-  console.log('🧪 TEST ENDPOINT CALLED');
-  
-  try {
-    // Just return a success message to test if the endpoint works
-    res.json({
-      success: true,
-      message: 'Test endpoint is working!',
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('Test error:', error);
-    res.status(500).json({
-      error: 'Test failed',
-      details: error.message
-    });
-  }
-});
-
-// Session API Routes - SIMPLIFIED
+// Session API Routes - REAL IMPLEMENTATION
 app.post('/api/start-session', async (req, res) => {
   console.log('📱 API Called: /api/start-session');
   console.log('Request body:', JSON.stringify(req.body, null, 2));
@@ -56,73 +36,65 @@ app.post('/api/start-session', async (req, res) => {
   try {
     const { ownerNumber, returnQRCode, phoneNumber } = req.body;
     
-    console.log('🔄 Starting session with:', { ownerNumber, returnQRCode, phoneNumber });
+    const tempId = Date.now().toString() + Math.random().toString(36).substring(2);
+    
+    console.log('🔄 Starting REAL WhatsApp session...', { tempId, ownerNumber, phoneNumber, returnQRCode });
 
-    // SIMPLE TEST - Just return a QR code immediately
-    if (returnQRCode) {
-      console.log('🎯 Returning test QR code');
+    // REAL SESSION CREATION - No more test data
+    try {
+      const sessionId = await startNewSession(ownerNumber || '', (qr) => {
+        console.log('🎯 REAL QR code generated');
+        
+        // Store in active sessions
+        activeSessions.set(tempId, {
+          qr,
+          status: 'qr_ready',
+          ownerNumber: ownerNumber || '',
+          phoneNumber: phoneNumber || '',
+          timestamp: Date.now()
+        });
+        
+        // If QR was requested, return it immediately
+        if (returnQRCode) {
+          console.log('✅ Sending REAL QR code to frontend');
+          res.json({
+            tempId,
+            qr,
+            status: 'qr_ready',
+            message: 'Scan this QR code with WhatsApp'
+          });
+        }
+      });
       
-      // Return a test QR code (this is a fake QR for testing)
-      const testQR = '2@3e7S4gR9pXqL2bK8mN5tWcVdF7hJkL3pQrS9tUvWxYzAbCdEfGhIjKlMnOpQrStUvWxYz1234567890ABCD';
-      
-      const tempId = 'test_' + Date.now();
+      // Session connected successfully
+      console.log('✅ Session connected successfully:', sessionId);
       activeSessions.set(tempId, {
-        qr: testQR,
-        status: 'qr_ready',
+        sessionId,
+        status: 'connected',
+        ownerNumber: ownerNumber || '',
+        phoneNumber: phoneNumber || '',
         timestamp: Date.now()
       });
       
-      return res.json({
-        tempId,
-        qr: testQR,
-        status: 'qr_ready',
-        message: 'TEST QR CODE - Backend is working!'
-      });
-    }
-    
-    // If we get here, try the real session creation
-    console.log('🔄 Attempting real session creation...');
-    
-    const tempId = Date.now().toString();
-    
-    try {
-      const sessionId = await startNewSession(ownerNumber || '', (qr) => {
-        console.log('✅ QR callback fired!');
-        activeSessions.set(tempId, {
-          qr,
-          status: 'qr_ready', 
-          ownerNumber: ownerNumber || '',
-          timestamp: Date.now()
-        });
-      });
-      
-      console.log('✅ Session created successfully:', sessionId);
       res.json({
         sessionId,
-        status: 'connected', 
-        message: 'Session created!'
+        status: 'connected',
+        message: 'Session created successfully'
       });
       
     } catch (sessionError) {
       console.error('❌ SESSION CREATION ERROR:', sessionError);
-      console.error('Error stack:', sessionError.stack);
-      
       res.status(500).json({
         error: 'Session creation failed',
-        details: sessionError.message,
-        stack: sessionError.stack // This will show us the exact error
+        details: sessionError.message
       });
     }
     
   } catch (error) {
     console.error('💥 TOP LEVEL ERROR:', error);
-    console.error('Full error stack:', error.stack);
-    
     res.status(500).json({
       error: 'Failed to start session',
-      details: error.message,
-      stack: error.stack, // This will show us the exact error
-      type: error.constructor.name
+      details: error.message
     });
   }
 });
@@ -145,18 +117,15 @@ app.get('/api/session-status', (req, res) => {
 
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Sword Bot Backend (DEBUG) running on port ${PORT}`);
+  console.log(`🚀 Sword Bot Backend (REAL) running on port ${PORT}`);
   console.log(`🌐 Health: http://0.0.0.0:${PORT}/health`);
-  console.log(`🧪 Test: http://0.0.0.0:${PORT}/api/test-session`);
 });
 
 // Global error handlers
 process.on('unhandledRejection', (reason, promise) => {
   console.error('💥 UNHANDLED REJECTION:', reason);
-  console.error('At promise:', promise);
 });
 
 process.on('uncaughtException', (error) => {
   console.error('💥 UNCAUGHT EXCEPTION:', error);
-  console.error('Stack:', error.stack);
 });
