@@ -184,9 +184,6 @@
   </div>
 
   <script>
-    // ADD THIS LINE AT THE TOP OF YOUR JAVASCRIPT
-const BACKEND_URL = 'https://sword-bot-backend.onrender.com';
-    
   // Enhanced Theme detection and toggle functionality
   const themeToggle = document.getElementById('theme-toggle');
   const themeIcon = themeToggle ? themeToggle.querySelector('i') : null;
@@ -317,7 +314,7 @@ const BACKEND_URL = 'https://sword-bot-backend.onrender.com';
   const displayInfo = document.getElementById('displayInfo');
   let pollingTimer = null;
 
-  // FIXED: Use the correct backend URL
+  // FIXED: Use the correct backend URL (REMOVED DUPLICATE)
   const BACKEND_URL = 'https://sword-bot-backend.onrender.com';
 
   function setStatus(t, cls) {
