@@ -1,49 +1,44 @@
-// server.js - BACKEND ONLY (for sword-bot-backend)
+// server.js - ULTRA SIMPLE
 import express from 'express';
-import { startNewSession } from './startsession.js';
-import cors from 'cors';
+import { makeWASocket, useMultiFileAuthState } from '@whiskeysockets/baileys';
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.use(cors());
 app.use(express.json());
 
-const activeSessions = new Map();
+let currentQR = null;
 
-// API ENDPOINTS ONLY - No HTML serving
-app.get('/health', (req, res) => {
-  res.json({ status: 'OK', service: 'Backend API' });
-});
-
-app.post('/api/start-session', async (req, res) => {
+app.post('/api/start', async (req, res) => {
+  console.log('🔄 Starting WhatsApp...');
+  
   try {
-    const { returnQRCode } = req.body;
-    const tempId = Date.now().toString();
+    const { state, saveCreds } = await useMultiFileAuthState('./sessions');
+    const sock = makeWASocket({
+      auth: state,
+      printQRInTerminal: true,
+      logger: { level: 'silent' }
+    });
 
-    const sessionId = await startNewSession('', (qr) => {
-      activeSessions.set(tempId, { qr, status: 'qr_ready', timestamp: Date.now() });
-      
-      if (returnQRCode) {
-        res.json({ tempId, qr, status: 'qr_ready', message: 'Scan QR with WhatsApp' });
+    sock.ev.on('creds.update', saveCreds);
+    
+    sock.ev.on('connection.update', (update) => {
+      console.log('📡 Update:', update.connection);
+      if (update.qr) {
+        console.log('✅ QR Received!');
+        currentQR = update.qr;
+        res.json({ success: true, qr: update.qr });
       }
     });
 
-    activeSessions.set(tempId, { sessionId, status: 'connected', timestamp: Date.now() });
-    res.json({ sessionId, status: 'connected', message: 'Session created!' });
-
   } catch (error) {
-    res.status(500).json({ error: 'Failed: ' + error.message });
+    console.error('❌ Error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
-app.get('/api/session-status', (req, res) => {
-  const { tempId } = req.query;
-  const session = activeSessions.get(tempId);
-  if (!session) return res.status(404).json({ error: 'Not found' });
-  res.json(session);
+app.get('/health', (req, res) => {
+  res.json({ status: 'OK', hasQR: !!currentQR });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ Backend API running on port ${PORT}`);
+app.listen(3000, '0.0.0.0', () => {
+  console.log('🚀 Server ready on port 3000');
 });
